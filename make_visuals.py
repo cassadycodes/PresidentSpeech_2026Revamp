@@ -122,6 +122,32 @@ def per_10k(counter, total):
     return {w: n / total * 10_000 for w, n in counter.items()}
 
 
+def lemma_families(tokens, dropped):
+    """Collapse inflections AND derivations into one item per word family.
+
+    POS-aware WordNet lemmatization handles irregular forms (said -> say,
+    children -> child), then Snowball stemming over the lemma merges
+    derivational relatives (vaccine / vaccinated / vaccination -> 'vaccin').
+    Stems make poor labels, so each family is labeled with its most frequent
+    surface form. Returns Counter {label: count}.
+    """
+    from nltk.stem import SnowballStemmer, WordNetLemmatizer
+    wnl, stemmer = WordNetLemmatizer(), SnowballStemmer("english")
+    pos_map = {"J": "a", "V": "v", "N": "n", "R": "r"}
+    families, surfaces = Counter(), {}
+    for word, tag in nltk.pos_tag(tokens):
+        lemma = wnl.lemmatize(word, pos_map.get(tag[0], "n"))
+        # a lemma can land in the stoplist even when its surface form
+        # doesn't ("saying" -> "say")
+        if word in dropped or lemma in dropped:
+            continue
+        stem = stemmer.stem(lemma)
+        families[stem] += 1
+        surfaces.setdefault(stem, Counter())[word] += 1
+    return Counter({surfaces[stem].most_common(1)[0][0]: count
+                    for stem, count in families.items()})
+
+
 def standardized_ttr(tokens):
     """TTR per non-overlapping 1,000-token window."""
     return [
@@ -379,6 +405,18 @@ def main():
         if not suffix:  # diversity uses the standard token stream only
             diversity_chart({p: standardized_ttr(t)
                              for p, t in tokens.items()})
+
+    # word families: substantive stoplist, inflections/derivations merged
+    fams = {pres: lemma_families(base[pres], SUBSTANTIVE_EXTRA)
+            for pres in PRESIDENTS}
+    paired_barh(
+        {pres: sorted(per_10k(f, sum(f.values())).items(),
+                      key=lambda x: -x[1])[:20]
+         for pres, f in fams.items()},
+        "Top 20 word families",
+        "per 10,000 content tokens; inflections and derivations grouped "
+        "(vaccine/vaccinated/vaccination), labeled by most frequent form; "
+        "extended stoplist", "top20_lemmas.png")
 
     # sentiment runs on the same filtered sentences, before stopword removal
     sentiment_chart(sentences)

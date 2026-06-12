@@ -48,6 +48,11 @@ fairly despite the ~3x size difference (the originals plotted raw counts).
   join two words that were never adjacent ("great job, great job" must not
   become "job job"). Style words aren't lost — the standard-stoplist keyness
   chart is where they show up.
+- **top20_lemmas** — frequencies of word *families*: POS-aware WordNet
+  lemmatization (said → say) plus Snowball stemming of the lemma merges
+  inflections and derivations (vaccine / vaccinated / vaccination count as
+  one item), with each family labeled by its most frequent surface form.
+  Uses the extended stoplist.
 - **lexical_diversity** — standardized TTR over 1,000-token windows, replacing
   raw TTR (which shrinks as a corpus grows and can't compare corpus sizes)
 - **sentiment** — per-sentence VADER polarity: share of positive / neutral /
