@@ -54,10 +54,14 @@ fairly despite the ~3x size difference (the originals plotted raw counts).
   one item), with each family labeled by its most frequent surface form.
   Uses the extended stoplist.
 - **top20_verbs** — most frequent lexical verbs, POS-tagged in sentence
-  context, inflections merged. Auxiliaries, modals, politeness formulae, and
-  bleached constructions (future "going to", habitual "used to") are
-  excluded; tagging in context is what keeps genuine "going" (motion) and
-  "use" (instrumental) while dropping their filler uses.
+  context, inflections merged. Excluded as filler: auxiliaries, modals,
+  politeness formulae, future "going to" / habitual "used to", get-passives
+  ("get vaccinated"), and hedges (first-person "I think/believe/guess/
+  suppose/mean", parenthetical "you know,"). Tagging in context is what
+  separates filler uses from genuine ones — motion "going", instrumental
+  "use", and contentful "you know the numbers" are all kept. Hedging is
+  itself a finding: the filter removes 8.4% of Trump's verb tokens but only
+  3.3% of Biden's.
 - **lexical_diversity** — standardized TTR over 1,000-token windows, replacing
   raw TTR (which shrinks as a corpus grows and can't compare corpus sizes)
 - **sentiment** — per-sentence VADER polarity: share of positive / neutral /

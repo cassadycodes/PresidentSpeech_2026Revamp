@@ -162,34 +162,56 @@ def standardized_ttr(tokens):
 FILLER_VERBS = {
     "be", "have", "do", "thank", "let", "please", "bless",
     "'s", "'re", "'ve", "'m", "'d", "ca", "wo", "sha", "na", "ta",
-    "gon", "wan", "got",  # "gotta"/"gonna"/"wanna" fragments
+    "gon", "wan",
 }
+
+# first-person stance hedges: "I think we should..." asserts "we should..."
+HEDGE_AFTER_I = {"think", "believe", "guess", "suppose", "mean"}
+
+PUNCT_TOKENS = {",", ".", "—", "–", "-", ";", ":", "?", "!"}
 
 
 def verb_frequencies(sentence_list):
     """Lemma counts of lexical verbs, POS-tagged in sentence context.
 
-    Context matters: future "going to <verb>" and habitual "used to" are
-    syntactic filler and are skipped, while genuine "going" (motion) and
-    "use" (instrumental) are kept.
+    Context separates a verb's contentful uses from its filler uses, so
+    exclusions look at the neighboring tokens:
+      * future "going to <verb>" / habitual "used to"  (genuine motion
+        "going" and instrumental "use" are kept)
+      * get-passives: "get/got vaccinated" = get + past participle
+      * hedges: first-person "I think/believe/guess/suppose/mean", and
+        parenthetical "you know," (followed by punctuation; "you know the
+        numbers" is kept)
     """
     from nltk.stem import WordNetLemmatizer
     wnl = WordNetLemmatizer()
     tagged_sents = nltk.pos_tag_sents(
         nltk.word_tokenize(s) for s in sentence_list)
-    counts = Counter()
+    counts, skipped = Counter(), Counter()
     for sent in tagged_sents:
         for i, (word, tag) in enumerate(sent):
             if not tag.startswith("VB") or not word.isalpha():
                 continue
             word = word.lower()
-            nxt = sent[i + 1][0].lower() if i + 1 < len(sent) else ""
-            if word in ("going", "used") and nxt == "to":
+            prev = sent[i - 1][0].lower() if i else ""
+            nxt, nxt_tag = sent[i + 1] if i + 1 < len(sent) else ("", "")
+            if word in ("going", "used") and nxt.lower() == "to":
+                skipped["going to / used to"] += 1
                 continue
             lemma = wnl.lemmatize(word, "v")
+            if lemma == "get" and nxt_tag == "VBN":
+                skipped["get-passive"] += 1
+                continue
+            if lemma in HEDGE_AFTER_I and prev == "i":
+                skipped["hedge"] += 1
+                continue
+            if (lemma == "know" and prev == "you"
+                    and (nxt in PUNCT_TOKENS or not nxt)):
+                skipped["hedge"] += 1
+                continue
             if lemma not in FILLER_VERBS:
                 counts[lemma] += 1
-    return counts
+    return counts, skipped
 
 
 def log_likelihood(freqs_a, freqs_b, total_a, total_b, min_count=10):
@@ -455,18 +477,22 @@ def main():
         "extended stoplist", "top20_lemmas.png")
 
     # most frequent lexical verbs (POS-tagged in sentence context)
-    verbs = {pres: verb_frequencies(sentences[pres]) for pres in PRESIDENTS}
-    for pres, v in verbs.items():
-        print(f"{PRESIDENTS[pres]['label']}: {sum(v.values()):,} lexical "
-              f"verb tokens, {len(v):,} verb lemmas")
+    verbs = {}
+    for pres in PRESIDENTS:
+        verbs[pres], skipped = verb_frequencies(sentences[pres])
+        skips = ", ".join(f"{k}: {n:,}" for k, n in skipped.most_common())
+        print(f"{PRESIDENTS[pres]['label']}: {sum(verbs[pres].values()):,} "
+              f"lexical verb tokens, {len(verbs[pres]):,} verb lemmas "
+              f"(skipped {skips})")
     paired_barh(
         {pres: sorted(per_10k(v, sum(v.values())).items(),
                       key=lambda x: -x[1])[:20]
          for pres, v in verbs.items()},
         "Top 20 verbs",
-        "per 10,000 lexical verb tokens; inflections merged; auxiliaries, "
-        "modals, and filler constructions (future 'going to', habitual "
-        "'used to') excluded", "top20_verbs.png")
+        "per 10,000 lexical verb tokens; inflections merged; excludes "
+        "auxiliaries, modals, future 'going to' / habitual 'used to', "
+        "get-passives ('get vaccinated'), and hedges ('I think', "
+        "parenthetical 'you know')", "top20_verbs.png")
 
     # sentiment runs on the same filtered sentences, before stopword removal
     sentiment_chart(sentences)
