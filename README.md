@@ -41,8 +41,19 @@ fairly despite the ~3x size difference (the originals plotted raw counts).
 - **top20_words / top_bigrams / top_trigrams** — side-by-side panels
 - **distinctive_words** — keyness (Dunning log-likelihood): each president's
   signature vocabulary relative to the other
+- **`*_substantive` variants** — the same four charts with an extended
+  stoplist (light verbs, discourse markers, generic time/evaluative words),
+  surfacing topical content instead of style. Substantive n-grams are formed
+  over the standard token stream and then filtered, so removing a word can't
+  join two words that were never adjacent ("great job, great job" must not
+  become "job job"). Style words aren't lost — the standard-stoplist keyness
+  chart is where they show up.
 - **lexical_diversity** — standardized TTR over 1,000-token windows, replacing
   raw TTR (which shrinks as a corpus grows and can't compare corpus sizes)
+- **sentiment** — per-sentence VADER polarity: share of positive / neutral /
+  negative sentences and the score distribution. Read with care: VADER scores
+  evaluative *language*, so it measures how upbeat the wording is, not whether
+  the news delivered is good.
 
 Known caveat: concatenating a president's dialogue turns can manufacture
 cross-turn n-grams (e.g. "go ahead go ahead" from consecutive short answers).
@@ -50,4 +61,4 @@ cross-turn n-grams (e.g. "go ahead go ahead" from consecutive short answers).
 ## Requirements
 
 Python 3.10+ with `matplotlib` and `nltk`
-(`python -m nltk.downloader stopwords punkt_tab`).
+(`python -m nltk.downloader stopwords punkt_tab vader_lexicon`).

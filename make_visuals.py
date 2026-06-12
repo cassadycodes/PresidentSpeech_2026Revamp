@@ -41,17 +41,57 @@ EXTRA_STOPS = {
     "yeah", "thank", "thanks", "please", "god", "bless",
 }
 
+# Second tier for the "_substantive" chart variants: high-frequency,
+# low-information words that crowd topical content out of the n-gram charts.
+# Generic evaluatives (great/tremendous/...) are filtered here too — they're
+# style, and the standard-stoplist keyness chart already captures them.
+# Deliberately NOT filtered: people, country, america(n), new (new york),
+# better/best (build back better), first (first lady).
+SUBSTANTIVE_EXTRA = {
+    # pronouns/aux NLTK misses, contraction fragments
+    "us", "let", "would", "could", "should", "must", "may", "might",
+    "ca", "wo", "gon", "na", "wan", "ta", "gotta",
+    # small numbers
+    "one", "two", "three",
+    # light verbs
+    "get", "gets", "getting", "got", "gotten", "go", "going", "goes",
+    "went", "gone", "come", "comes", "coming", "came", "know", "knows",
+    "knowing", "knew", "known", "think", "thinks", "thinking", "thought",
+    "say", "says", "saying", "said", "see", "sees", "seen", "saw", "look",
+    "looks", "looking", "looked", "make", "makes", "making", "made",
+    "want", "wants", "wanting", "wanted", "take", "takes", "taking",
+    "took", "taken", "put", "give", "gives", "giving", "gave", "tell",
+    "tells", "telling", "told", "done", "mean", "means", "meant",
+    "happen", "happens", "happened", "happening",
+    # discourse markers / degree words
+    "well", "really", "actually", "maybe", "also", "even", "still",
+    "okay", "ok", "oh", "hey", "sure", "right", "like", "lot", "lots",
+    "bit", "little", "much", "many", "way", "ways", "kind", "sort",
+    # generic nouns
+    "thing", "things", "something", "anything", "everything", "nothing",
+    "somebody", "anybody", "everybody", "nobody", "someone", "anyone",
+    "everyone",
+    # generic time words
+    "time", "times", "day", "days", "today", "tonight", "week", "weeks",
+    "month", "months", "year", "years", "ago", "never", "ever", "always",
+    "every", "back", "ahead",
+    # generic evaluatives
+    "good", "great", "bad", "nice", "fantastic", "incredible",
+    "tremendous", "amazing", "beautiful", "wonderful", "perfect",
+    "terrible", "horrible",
+}
+
 WINDOW = 1000  # tokens per window for standardized TTR
 
 
 # ------------------------------------------------------------- tokenize ----
 
-def tokenize(path):
+def tokenize(path, extra_stops=EXTRA_STOPS):
     text = path.read_text(encoding="utf-8")
     # NLTK splits straight apostrophes ("we'll" -> "we", "'ll") but not
     # curly ones, and the corpus uses curly throughout
     text = text.replace("’", "'").replace("‘", "'")
-    stops = set(stopwords.words("english")) | EXTRA_STOPS
+    stops = set(stopwords.words("english")) | extra_stops
     return [
         w.lower() for w in nltk.word_tokenize(text)
         if w.lower() not in stops
@@ -120,7 +160,7 @@ def paired_barh(data, title, subtitle, fname, n=20):
     save(fig, fname)
 
 
-def keyness_chart(scores, n=15):
+def keyness_chart(scores, fname="distinctive_words.png", n=15):
     top_a = sorted((s for s in scores.items() if s[1] > 0),
                    key=lambda x: -x[1])[:n]
     top_b = sorted((s for s in scores.items() if s[1] < 0),
@@ -148,7 +188,78 @@ def keyness_chart(scores, n=15):
              "(Dunning log-likelihood, min. 10 occurrences)",
              fontsize=10, color="#666666")
     fig.tight_layout(rect=(0.02, 0, 1, 0.92))
-    save(fig, "distinctive_words.png")
+    save(fig, fname)
+
+
+def sentiment_chart(sentences):
+    """Per-sentence VADER polarity: share of pos/neu/neg + score distribution."""
+    from nltk.sentiment import SentimentIntensityAnalyzer
+    sia = SentimentIntensityAnalyzer()
+    scores = {p: [sia.polarity_scores(s)["compound"] for s in sents]
+              for p, sents in sentences.items()}
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5),
+                                   width_ratios=(1, 1.3))
+    # left: stacked share of positive / neutral / negative sentences
+    shades = {"positive": "#4d9971", "neutral": "#cccccc",
+              "negative": "#c77b6e"}
+    for y, (pres, vals) in enumerate(scores.items()):
+        n = len(vals)
+        shares = {
+            "positive": sum(v >= 0.05 for v in vals) / n,
+            "neutral": sum(-0.05 < v < 0.05 for v in vals) / n,
+            "negative": sum(v <= -0.05 for v in vals) / n,
+        }
+        left = 0
+        for cls, share in shares.items():
+            ax1.barh(y, share, left=left, color=shades[cls], height=0.55)
+            if share > 0.06:
+                ax1.text(left + share / 2, y, f"{share:.0%}", ha="center",
+                         va="center", fontsize=10, color="white",
+                         fontweight="bold")
+            left += share
+    ax1.set_yticks(range(len(scores)),
+                   [PRESIDENTS[p]["label"] for p in scores], fontsize=12)
+    ax1.set_xlim(0, 1)
+    ax1.invert_yaxis()
+    style_axis(ax1)
+    ax1.xaxis.grid(False)
+    ax1.set_xticks([])
+    ax1.set_title("share of sentences", fontsize=11, color="#666666")
+    ax1.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=c)
+                        for c in shades.values()],
+               labels=list(shades), loc="upper center", ncols=3,
+               bbox_to_anchor=(0.5, -0.02), frameon=False, fontsize=9)
+
+    # right: distribution of compound scores
+    import numpy as np
+    bins = np.linspace(-1, 1, 41)
+    for pres, vals in scores.items():
+        cfg = PRESIDENTS[pres]
+        ax2.hist(vals, bins=bins, density=True, histtype="step",
+                 linewidth=2, color=cfg["color"], label=cfg["label"])
+        mean = sum(vals) / len(vals)
+        ax2.axvline(mean, color=cfg["color"], linestyle="--", linewidth=1.2)
+        ax2.text(mean, ax2.get_ylim()[1] * 0.97, f" {mean:+.3f}",
+                 color=cfg["color"], fontsize=9, fontweight="bold",
+                 va="top")
+    for side in ("top", "right"):
+        ax2.spines[side].set_visible(False)
+    ax2.set_xlabel("VADER compound score per sentence "
+                   "(− negative ... + positive)", fontsize=10,
+                   color="#666666")
+    ax2.set_title("distribution (dashed = mean)", fontsize=11,
+                  color="#666666")
+    ax2.legend(frameon=False, fontsize=10)
+
+    fig.suptitle("Sentence-level sentiment (VADER)", fontsize=15,
+                 fontweight="bold", x=0.05, ha="left")
+    fig.text(0.05, 0.91, "Computed on raw cleaned text, before any stopword "
+             "filtering. VADER rewards evaluative words, so a high score "
+             "reads as 'upbeat language', not 'positive policy'.",
+             fontsize=10, color="#666666")
+    fig.tight_layout(rect=(0.01, 0, 1, 0.88))
+    save(fig, "sentiment.png")
 
 
 def diversity_chart(ttrs):
@@ -191,36 +302,70 @@ def save(fig, fname):
 
 # ----------------------------------------------------------------- main ----
 
+VARIANTS = {
+    # suffix -> (extra stopword set, subtitle note)
+    "": (EXTRA_STOPS, "stopwords removed"),
+    "_substantive": (EXTRA_STOPS | SUBSTANTIVE_EXTRA,
+                     "extended stoplist: light verbs, discourse markers, "
+                     "generic time/evaluative words also removed"),
+}
+
+
 def main():
-    tokens, counts, ngram_counts = {}, {}, {}
-    for pres in PRESIDENTS:
-        tokens[pres] = tokenize(pathlib.Path(f"{pres}_cleaned.txt"))
-        counts[pres] = Counter(tokens[pres])
-        ngram_counts[pres] = {
-            2: Counter(" ".join(g) for g in nltk.bigrams(tokens[pres])),
-            3: Counter(" ".join(g) for g in nltk.trigrams(tokens[pres])),
-        }
-        print(f"{PRESIDENTS[pres]['label']}: {len(tokens[pres]):,} content "
-              f"tokens, {len(counts[pres]):,} types")
+    base = {pres: tokenize(pathlib.Path(f"{pres}_cleaned.txt"))
+            for pres in PRESIDENTS}
 
-    def top_per_10k(counters, n=20):
-        return {
-            pres: sorted(per_10k(c, len(tokens[pres])).items(),
-                         key=lambda x: -x[1])[:n]
-            for pres, c in counters.items()
-        }
+    for suffix, (extra, note) in VARIANTS.items():
+        dropped = extra - EXTRA_STOPS
+        tokens, counts, ngram_counts = {}, {}, {}
+        for pres in PRESIDENTS:
+            tokens[pres] = [t for t in base[pres] if t not in dropped]
+            counts[pres] = Counter(tokens[pres])
+            # n-grams always form over the *standard* stream, then keep only
+            # those made entirely of surviving words — re-forming them over
+            # the filtered stream would join words that were never adjacent
+            # ("great job, great job" -> "job job")
+            ngram_counts[pres] = {
+                n: Counter(" ".join(g) for g in nltk.ngrams(base[pres], n)
+                           if not dropped.intersection(g))
+                for n in (2, 3)
+            }
+            print(f"{PRESIDENTS[pres]['label']}{suffix}: "
+                  f"{len(tokens[pres]):,} content tokens, "
+                  f"{len(counts[pres]):,} types")
 
-    print("Rendering charts...")
-    sub = "occurrences per 10,000 content tokens (stopwords removed)"
-    paired_barh(top_per_10k(counts), "Top 20 words", sub, "top20_words.png")
-    paired_barh(top_per_10k({p: c[2] for p, c in ngram_counts.items()}),
-                "Top 20 bigrams", sub, "top_bigrams.png")
-    paired_barh(top_per_10k({p: c[3] for p, c in ngram_counts.items()}),
-                "Top 20 trigrams", sub, "top_trigrams.png")
+        def top_per_10k(counters, n=20):
+            return {
+                pres: sorted(per_10k(c, len(tokens[pres])).items(),
+                             key=lambda x: -x[1])[:n]
+                for pres, c in counters.items()
+            }
 
-    keyness_chart(log_likelihood(counts["biden"], counts["trump"],
-                                 len(tokens["biden"]), len(tokens["trump"])))
-    diversity_chart({p: standardized_ttr(t) for p, t in tokens.items()})
+        sub = f"occurrences per 10,000 content tokens ({note})"
+        paired_barh(top_per_10k(counts), "Top 20 words", sub,
+                    f"top20_words{suffix}.png")
+        paired_barh(top_per_10k({p: c[2] for p, c in ngram_counts.items()}),
+                    "Top 20 bigrams", sub, f"top_bigrams{suffix}.png")
+        paired_barh(top_per_10k({p: c[3] for p, c in ngram_counts.items()}),
+                    "Top 20 trigrams", sub, f"top_trigrams{suffix}.png")
+        keyness_chart(
+            log_likelihood(counts["biden"], counts["trump"],
+                           len(tokens["biden"]), len(tokens["trump"])),
+            f"distinctive_words{suffix}.png")
+
+        if not suffix:  # diversity uses the standard token stream only
+            diversity_chart({p: standardized_ttr(t)
+                             for p, t in tokens.items()})
+
+    # sentiment runs on raw sentences, independent of stopword variants
+    sentences = {
+        pres: nltk.sent_tokenize(
+            pathlib.Path(f"{pres}_cleaned.txt").read_text(encoding="utf-8"))
+        for pres in PRESIDENTS
+    }
+    for pres, sents in sentences.items():
+        print(f"{PRESIDENTS[pres]['label']}: {len(sents):,} sentences")
+    sentiment_chart(sentences)
     print("Done.")
 
 
