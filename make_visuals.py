@@ -83,17 +83,33 @@ SUBSTANTIVE_EXTRA = {
 
 WINDOW = 1000  # tokens per window for standardized TTR
 
+# Sentences shorter than this many words are dropped before any analysis.
+# They are almost entirely conversational management ("Go ahead.", "Yeah.",
+# "Thank you."), which manufactures n-grams like "go ahead go ahead" when
+# turns are concatenated and floods the sentiment sample with neutrals.
+MIN_SENT_WORDS = 4
+
 
 # ------------------------------------------------------------- tokenize ----
 
-def tokenize(path, extra_stops=EXTRA_STOPS):
+def load_sentences(path):
+    """Sentence-split a cleaned corpus and drop ultra-short sentences.
+
+    Returns (kept_sentences, total_sentence_count).
+    """
     text = path.read_text(encoding="utf-8")
     # NLTK splits straight apostrophes ("we'll" -> "we", "'ll") but not
     # curly ones, and the corpus uses curly throughout
     text = text.replace("’", "'").replace("‘", "'")
+    sentences = nltk.sent_tokenize(text)
+    return ([s for s in sentences if len(s.split()) >= MIN_SENT_WORDS],
+            len(sentences))
+
+
+def tokenize(sentences, extra_stops=EXTRA_STOPS):
     stops = set(stopwords.words("english")) | extra_stops
     return [
-        w.lower() for w in nltk.word_tokenize(text)
+        w.lower() for w in nltk.word_tokenize(" ".join(sentences))
         if w.lower() not in stops
         and w not in string.punctuation
         and any(c.isalpha() for c in w)
@@ -254,8 +270,9 @@ def sentiment_chart(sentences):
 
     fig.suptitle("Sentence-level sentiment (VADER)", fontsize=15,
                  fontweight="bold", x=0.05, ha="left")
-    fig.text(0.05, 0.91, "Computed on raw cleaned text, before any stopword "
-             "filtering. VADER rewards evaluative words, so a high score "
+    fig.text(0.05, 0.91, "Computed before stopword filtering; sentences "
+             f"under {MIN_SENT_WORDS} words ('Go ahead.', 'Yeah.') are "
+             "excluded. VADER rewards evaluative words, so a high score "
              "reads as 'upbeat language', not 'positive policy'.",
              fontsize=10, color="#666666")
     fig.tight_layout(rect=(0.01, 0, 1, 0.88))
@@ -312,8 +329,14 @@ VARIANTS = {
 
 
 def main():
-    base = {pres: tokenize(pathlib.Path(f"{pres}_cleaned.txt"))
-            for pres in PRESIDENTS}
+    sentences, base = {}, {}
+    for pres in PRESIDENTS:
+        kept, total = load_sentences(pathlib.Path(f"{pres}_cleaned.txt"))
+        sentences[pres] = kept
+        base[pres] = tokenize(kept)
+        print(f"{PRESIDENTS[pres]['label']}: kept {len(kept):,} of {total:,} "
+              f"sentences (dropped {total - len(kept):,} under "
+              f"{MIN_SENT_WORDS} words)")
 
     for suffix, (extra, note) in VARIANTS.items():
         dropped = extra - EXTRA_STOPS
@@ -357,14 +380,7 @@ def main():
             diversity_chart({p: standardized_ttr(t)
                              for p, t in tokens.items()})
 
-    # sentiment runs on raw sentences, independent of stopword variants
-    sentences = {
-        pres: nltk.sent_tokenize(
-            pathlib.Path(f"{pres}_cleaned.txt").read_text(encoding="utf-8"))
-        for pres in PRESIDENTS
-    }
-    for pres, sents in sentences.items():
-        print(f"{PRESIDENTS[pres]['label']}: {len(sents):,} sentences")
+    # sentiment runs on the same filtered sentences, before stopword removal
     sentiment_chart(sentences)
     print("Done.")
 

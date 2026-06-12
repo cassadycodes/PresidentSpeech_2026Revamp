@@ -55,8 +55,12 @@ fairly despite the ~3x size difference (the originals plotted raw counts).
   evaluative *language*, so it measures how upbeat the wording is, not whether
   the news delivered is good.
 
-Known caveat: concatenating a president's dialogue turns can manufacture
-cross-turn n-grams (e.g. "go ahead go ahead" from consecutive short answers).
+Before any analysis, sentences under 4 words are dropped (9% of Biden's, 17%
+of Trump's). These are almost entirely conversational management ("Go
+ahead.", "Yeah, please.") that manufactured cross-turn n-grams like "go ahead
+go ahead" and flooded the sentiment sample with neutral one-liners. Longer
+turns can still concatenate, so an occasional cross-turn n-gram remains
+possible.
 
 ## Requirements
 
