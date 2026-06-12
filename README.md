@@ -53,6 +53,11 @@ fairly despite the ~3x size difference (the originals plotted raw counts).
   inflections and derivations (vaccine / vaccinated / vaccination count as
   one item), with each family labeled by its most frequent surface form.
   Uses the extended stoplist.
+- **top20_verbs** — most frequent lexical verbs, POS-tagged in sentence
+  context, inflections merged. Auxiliaries, modals, politeness formulae, and
+  bleached constructions (future "going to", habitual "used to") are
+  excluded; tagging in context is what keeps genuine "going" (motion) and
+  "use" (instrumental) while dropping their filler uses.
 - **lexical_diversity** — standardized TTR over 1,000-token windows, replacing
   raw TTR (which shrinks as a corpus grows and can't compare corpus sizes)
 - **sentiment** — per-sentence VADER polarity: share of positive / neutral /

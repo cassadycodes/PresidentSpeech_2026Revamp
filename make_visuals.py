@@ -156,6 +156,42 @@ def standardized_ttr(tokens):
     ]
 
 
+# lemmas that are grammatical machinery rather than lexical verbs:
+# auxiliaries/copula, contraction fragments, and politeness formulae
+# (modals never reach this filter — they tag as MD, not VB*)
+FILLER_VERBS = {
+    "be", "have", "do", "thank", "let", "please", "bless",
+    "'s", "'re", "'ve", "'m", "'d", "ca", "wo", "sha", "na", "ta",
+    "gon", "wan", "got",  # "gotta"/"gonna"/"wanna" fragments
+}
+
+
+def verb_frequencies(sentence_list):
+    """Lemma counts of lexical verbs, POS-tagged in sentence context.
+
+    Context matters: future "going to <verb>" and habitual "used to" are
+    syntactic filler and are skipped, while genuine "going" (motion) and
+    "use" (instrumental) are kept.
+    """
+    from nltk.stem import WordNetLemmatizer
+    wnl = WordNetLemmatizer()
+    tagged_sents = nltk.pos_tag_sents(
+        nltk.word_tokenize(s) for s in sentence_list)
+    counts = Counter()
+    for sent in tagged_sents:
+        for i, (word, tag) in enumerate(sent):
+            if not tag.startswith("VB") or not word.isalpha():
+                continue
+            word = word.lower()
+            nxt = sent[i + 1][0].lower() if i + 1 < len(sent) else ""
+            if word in ("going", "used") and nxt == "to":
+                continue
+            lemma = wnl.lemmatize(word, "v")
+            if lemma not in FILLER_VERBS:
+                counts[lemma] += 1
+    return counts
+
+
 def log_likelihood(freqs_a, freqs_b, total_a, total_b, min_count=10):
     """Signed Dunning G2 per word: positive = overused in corpus A."""
     scores = {}
@@ -417,6 +453,20 @@ def main():
         "per 10,000 content tokens; inflections and derivations grouped "
         "(vaccine/vaccinated/vaccination), labeled by most frequent form; "
         "extended stoplist", "top20_lemmas.png")
+
+    # most frequent lexical verbs (POS-tagged in sentence context)
+    verbs = {pres: verb_frequencies(sentences[pres]) for pres in PRESIDENTS}
+    for pres, v in verbs.items():
+        print(f"{PRESIDENTS[pres]['label']}: {sum(v.values()):,} lexical "
+              f"verb tokens, {len(v):,} verb lemmas")
+    paired_barh(
+        {pres: sorted(per_10k(v, sum(v.values())).items(),
+                      key=lambda x: -x[1])[:20]
+         for pres, v in verbs.items()},
+        "Top 20 verbs",
+        "per 10,000 lexical verb tokens; inflections merged; auxiliaries, "
+        "modals, and filler constructions (future 'going to', habitual "
+        "'used to') excluded", "top20_verbs.png")
 
     # sentiment runs on the same filtered sentences, before stopword removal
     sentiment_chart(sentences)
